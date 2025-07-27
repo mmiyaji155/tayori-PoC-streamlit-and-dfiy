@@ -137,7 +137,7 @@ def main():
                      help="チャット履歴をクリアしてリセットします"):
             st.session_state.messages.clear()
             st.session_state.conversation_id = ""
-            st.experimental_rerun()
+            st.rerun()
 
         prompt = st.text_area(
             "🖋️ 追加要約プロンプト（任意）",

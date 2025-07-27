@@ -1,21 +1,40 @@
-# Streamlit × Dify ハイブリッド音声要約チャットシステム
+# 📝IC要約チャットシステム（Streamlit × Dify）
 
-音声ファイルをアップロードすると、OpenAI Whisper API で文字起こしを行い、Dify Chatflow で要約を生成するStreamlitアプリケーションです。
+音声ファイルをアップロードすると、AI が自動で **文字起こし → 要約** を行い、その内容について質問できるチャットシステムです。
 
-## 機能
+## ✨ 特徴
 
-- 🎤 **音声ファイルアップロード**: 大容量ファイル対応（自動圧縮機能付き）
-- 🗜️ **自動圧縮**: 25MB超過時は自動でWhisper API制限内に圧縮
-- 📝 **自動文字起こし**: OpenAI Whisper API による高精度な文字起こし
-- ✨ **シンプル処理**: アップロードして実行するだけ
-- 📊 **AI要約**: Dify Chatflow による要約生成
-- 💬 **チャットUI**: 直感的なチャットインターフェース
+- 🎤 **簡単3ステップ**: ファイル選択 → 自動処理 → チャットで質問
+- 🗜️ **大容量対応**: 25MB超過時は自動圧縮（ファイルサイズ制限なし）
+- 📝 **高精度文字起こし**: OpenAI Whisper API による日本語対応
+- 🤖 **AI要約**: Dify Chatflow による柔軟な要約生成
+- 💬 **継続会話**: 要約内容を踏まえた追加質問・修正指示が可能
+- 🌀 **ストリーミング応答**: リアルタイムで要約生成が進行
 
-## 対応音声形式
+## 🎯 できること
+
+### 🚀 かんたん 3 ステップ
+1. **ファイルを選択 → アップロード**  
+   - m4a / mp3 / wav / flac / mp4 … 主要フォーマット対応  
+   - 25 MB 超なら自動でサイズ調整します
+2. **自動処理を待つだけ**  
+   - Whisper が文字起こし → Dify が要約を生成  
+   - 生成が終わると要約がチャットに表示されます
+3. **チャットでやり取り**  
+   - 要約を読んで「もっと詳しく」「◯◯を削除して」など自由に質問・修正指示  
+   - 追加質問にも要約内容を踏まえて回答します
+
+### 💡 主な機能
+- **ポイント要約**: 長い音声でも要点だけを読みやすく抽出  
+- **フォロー質問**: 要約を材料に追加の質問や深掘りが可能  
+- **要約の修正指示**: 「箇条書きを増やす」「専門用語を削る」などリライト要求  
+- **履歴維持**: 同じ画面で会話を続けると過去の要約を踏まえて回答
+
+## 📁 対応音声形式
 
 m4a, mp3, wav, flac, mp4, mpeg, mpga, oga, ogg, webm
 
-## セットアップ
+## 🚀 セットアップ
 
 ### 1. 環境構築
 
@@ -32,46 +51,70 @@ pip install -r requirements.txt
 
 ### 2. API キー設定
 
-Streamlit Secrets に以下のキーを設定：
+`.streamlit/secrets.toml` ファイルを作成：
 
 ```toml
 OPENAI_API_KEY = "sk-..."
 DIFY_API_KEY = "app-..."
-DIFY_APP_ID = "xxxxxxxx"
 ```
 
-### 3. Dify Chatflow 設定
+詳細は [API_SETUP.md](./API_SETUP.md) を参照
 
-1. Dify で新規 Chatflow アプリを作成
-2. ノード構成:
-   - Start ノード
-   - LLM ノード (GPT-4o-mini推奨)
-   - End ノード
-3. API キーを発行
-
-## 実行
+### 3. 実行
 
 ```bash
 streamlit run app.py
 ```
 
-## デプロイ (Streamlit Community Cloud)
+## 🌐 デプロイ (Streamlit Community Cloud)
 
 1. GitHub にプッシュ
 2. [Streamlit Community Cloud](https://share.streamlit.io) でデプロイ
-3. Secrets 設定でAPI キーを登録
+3. Settings → Secrets でAPI キーを設定
 
-## システム構成
+## 🏗️ システム構成
 
 ```
-User → Streamlit UI → OpenAI Whisper API
+User → Streamlit UI → OpenAI Whisper API (文字起こし)
                   ↓
-              Dify Chatflow → GPT-4o-mini
+              Dify Chatflow → GPT-4o-mini (要約・質問応答)
+                  ↑
+              継続会話管理
 ```
 
-## 技術スタック
+## 🛠️ 技術スタック
 
 - **フロントエンド**: Streamlit 1.36+
-- **音声処理**: OpenAI Whisper API
+- **音声処理**: OpenAI Whisper API (whisper-1)
+- **音声圧縮**: pydub + FFmpeg
 - **要約生成**: Dify Chatflow + GPT-4o-mini
 - **デプロイ**: Streamlit Community Cloud
+
+## 📋 主要機能の詳細
+
+### 自動音声圧縮
+- 25MB超過時は自動でWhisper API制限内に圧縮
+- ビットレート調整とサンプリングレート最適化
+- 音質を保ちながらファイルサイズを削減
+
+### ストリーミング応答
+- Dify APIのストリーミング機能を活用
+- スピナーアニメーションで進捗表示
+- エラーハンドリングと詳細なエラーメッセージ
+
+### チャット履歴管理
+- セッション状態での会話履歴保持
+- 継続的な質問・回答のコンテキスト維持
+- ユーザーフレンドリーなチャットUI
+
+## 🔄 最新の改善点
+
+### 軽量化されたコード構成
+- 関数を簡潔に統合してメンテナンス性向上
+- エラーハンドリングの強化
+- ユーザーエクスペリエンスの改善
+
+### UIの最適化
+- サイドバーに分かりやすい使い方ガイドを追加
+- 3ステップ手順の明確化
+- 機能説明の充実

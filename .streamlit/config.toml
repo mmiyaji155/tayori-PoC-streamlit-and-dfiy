@@ -1,2 +1,5 @@
 [server]
-maxUploadSize = 200   # MB (自動圧縮機能により大きなファイルにも対応)
+maxUploadSize = 200   # MB (25MB超過時は自動圧縮で対応)
+
+[client]
+showErrorDetails = false  # 本番環境でのエラー詳細非表示

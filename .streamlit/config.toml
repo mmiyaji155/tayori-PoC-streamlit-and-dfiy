@@ -1,2 +1,2 @@
 [server]
-maxUploadSize = 30   # MB (Whisper API 25MB制限に余裕をもたせた設定)
+maxUploadSize = 200   # MB (自動圧縮機能により大きなファイルにも対応)

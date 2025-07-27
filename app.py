@@ -4,6 +4,8 @@ import requests
 import io
 import os
 from typing import Optional
+from pydub import AudioSegment
+import tempfile
 
 # ページ設定
 st.set_page_config(
@@ -47,6 +49,90 @@ def split_audio_file(audio_bytes: bytes, max_chunk_size: int = 25 * 1024 * 1024)
     
     # 25MBを超える場合はエラー
     raise ValueError(f"ファイルサイズが{max_chunk_size / (1024*1024):.0f}MBを超えています（Whisper API制限）。より小さいファイルをアップロードしてください。")
+
+def compress_audio(audio_bytes: bytes, original_filename: str, target_size_mb: int = 24) -> bytes:
+    """
+    音声ファイルを圧縮してターゲットサイズ以下に収める
+    
+    Args:
+        audio_bytes: 元の音声データ
+        original_filename: 元のファイル名（拡張子判定用）
+        target_size_mb: ターゲットサイズ（MB）
+        
+    Returns:
+        圧縮された音声データ（bytes）
+    """
+    try:
+        # ファイル拡張子を取得
+        file_extension = original_filename.split('.')[-1].lower() if '.' in original_filename else 'mp3'
+        
+        # 一時ファイルとして音声データを保存
+        with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as temp_input:
+            temp_input.write(audio_bytes)
+            temp_input_path = temp_input.name
+        
+        try:
+            # pydubで音声ファイルを読み込み
+            audio = AudioSegment.from_file(temp_input_path)
+            
+            # 元のサイズとターゲットサイズを計算
+            original_size_mb = len(audio_bytes) / (1024 * 1024)
+            target_size_bytes = target_size_mb * 1024 * 1024
+            
+            # 圧縮率を計算（少し余裕をもたせる）
+            compression_ratio = (target_size_bytes * 0.9) / len(audio_bytes)
+            
+            # 圧縮設定を決定
+            if compression_ratio < 0.3:
+                # 大幅圧縮が必要な場合
+                new_bitrate = "32k"
+                audio = audio.set_frame_rate(16000)  # サンプリングレート下げる
+            elif compression_ratio < 0.5:
+                # 中程度圧縮
+                new_bitrate = "64k"
+                audio = audio.set_frame_rate(22050)
+            elif compression_ratio < 0.7:
+                # 軽度圧縮
+                new_bitrate = "96k"
+            else:
+                # 最小圧縮
+                new_bitrate = "128k"
+            
+            # 一時出力ファイル
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_output:
+                temp_output_path = temp_output.name
+            
+            # MP3形式で圧縮エクスポート
+            audio.export(
+                temp_output_path,
+                format="mp3",
+                bitrate=new_bitrate,
+                parameters=["-q:a", "9"]  # 品質設定（0-9, 9が最小サイズ）
+            )
+            
+            # 圧縮された音声データを読み込み
+            with open(temp_output_path, 'rb') as f:
+                compressed_bytes = f.read()
+            
+            # 一時ファイルを削除
+            os.unlink(temp_output_path)
+            
+            compressed_size_mb = len(compressed_bytes) / (1024 * 1024)
+            
+            # 圧縮結果をログ出力
+            st.info(f"🗜️ **音声圧縮完了**: {original_size_mb:.1f}MB → {compressed_size_mb:.1f}MB (ビットレート: {new_bitrate})")
+            
+            return compressed_bytes
+            
+        finally:
+            # 入力一時ファイルを削除
+            if os.path.exists(temp_input_path):
+                os.unlink(temp_input_path)
+                
+    except Exception as e:
+        st.error(f"音声圧縮でエラーが発生しました: {e}")
+        # 圧縮に失敗した場合は元のデータを返す
+        return audio_bytes
 
 def transcribe_audio_chunks(chunks: list, openai_key: str, original_filename: str = "audio.m4a") -> str:
     """Whisperを使用してチャンクを文字起こし"""
@@ -144,8 +230,8 @@ def main():
         )
         
         st.info("💡 **対応形式**: m4a, mp3, wav, flac, mp4, mpeg, mpga, oga, ogg, webm")
-        st.info("📏 **ファイルサイズ**: 最大25MB（Whisper API制限）")
-        st.success("✨ **自動処理**: ファイル分割不要でそのまま処理可能")
+        st.info("📏 **ファイルサイズ**: 制限なし（25MB超過時は自動圧縮）")
+        st.success("🗜️ **自動圧縮**: 大きなファイルも自動で最適化して処理")
     
     # チャット履歴の表示
     for message in st.session_state.messages:
@@ -164,10 +250,11 @@ def main():
         file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
         st.info(f"📁 **ファイル**: {uploaded_file.name} ({file_size_mb:.1f} MB)")
         
-        # ファイルサイズチェック
+        # ファイルサイズに応じた処理方法を表示
         if file_size_mb > 25:
-            st.error("ファイルサイズが25MBを超えています（Whisper API制限）。より小さいファイルをアップロードしてください。")
-            return
+            st.warning(f"⚠️ ファイルサイズが25MBを超えています。実行時に自動で圧縮します。")
+        elif file_size_mb > 20:
+            st.info("ℹ️ ファイルサイズが大きいため、必要に応じて圧縮処理を行います。")
         
         # 処理ボタン
         if st.button("🎤 文字起こし・要約を実行", type="primary"):
@@ -182,14 +269,30 @@ def main():
             with st.chat_message("assistant"):
                 # 音声ファイルの読み込み
                 audio_bytes = uploaded_file.getvalue()
+                original_size_mb = len(audio_bytes) / (1024 * 1024)
                 
-                # ファイルサイズチェック
+                # ファイルサイズチェックと圧縮処理
                 st.info("🔄 音声ファイルを処理中...")
+                
+                # 25MBを超える場合は圧縮
+                if original_size_mb > 25:
+                    st.warning(f"ファイルサイズが25MBを超えているため圧縮します...")
+                    audio_bytes = compress_audio(audio_bytes, uploaded_file.name)
+                    final_size_mb = len(audio_bytes) / (1024 * 1024)
+                    
+                    # 圧縮後もサイズチェック
+                    if final_size_mb > 25:
+                        st.error("圧縮後もファイルサイズが25MBを超えています。より短い音声ファイルをアップロードしてください。")
+                        return
+                else:
+                    final_size_mb = original_size_mb
+                
+                # 処理完了
                 try:
-                    chunks = split_audio_file(audio_bytes)
-                    st.success(f"✅ 音声ファイルを処理しました（サイズ: {len(audio_bytes)/(1024*1024):.1f}MB）")
-                except ValueError as e:
-                    st.error(str(e))
+                    chunks = [audio_bytes]  # 圧縮されたファイルは必ず25MB以下
+                    st.success(f"✅ 音声ファイルを処理しました（最終サイズ: {final_size_mb:.1f}MB）")
+                except Exception as e:
+                    st.error(f"音声ファイルの処理でエラーが発生しました: {e}")
                     return
                 
                 # 文字起こし実行

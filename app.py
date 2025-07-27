@@ -37,27 +37,18 @@ DIFY_APP_ID = "xxxxxxxx"
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-def split_audio_file(audio_bytes: bytes, max_chunk_size: int = 14 * 1024 * 1024) -> list:
-    """音声ファイルをチャンクに分割"""
-    chunks = []
+def split_audio_file(audio_bytes: bytes, max_chunk_size: int = 25 * 1024 * 1024) -> list:
+    """音声ファイルをチェック（Whisper APIの25MB制限まで対応）"""
     total_size = len(audio_bytes)
     
+    # 25MB以下の場合はそのまま処理
     if total_size <= max_chunk_size:
         return [audio_bytes]
     
-    start = 0
-    chunk_num = 0
-    max_chunks = 10  # 最大10チャンク
-    
-    while start < total_size and chunk_num < max_chunks:
-        end = min(start + max_chunk_size, total_size)
-        chunks.append(audio_bytes[start:end])
-        start = end
-        chunk_num += 1
-    
-    return chunks
+    # 25MBを超える場合はエラー
+    raise ValueError(f"ファイルサイズが{max_chunk_size / (1024*1024):.0f}MBを超えています（Whisper API制限）。より小さいファイルをアップロードしてください。")
 
-def transcribe_audio_chunks(chunks: list, openai_key: str) -> str:
+def transcribe_audio_chunks(chunks: list, openai_key: str, original_filename: str = "audio.m4a") -> str:
     """Whisperを使用してチャンクを文字起こし"""
     client = openai.OpenAI(api_key=openai_key)
     transcripts = []
@@ -70,7 +61,9 @@ def transcribe_audio_chunks(chunks: list, openai_key: str) -> str:
         
         # チャンクをファイルオブジェクトとして準備
         audio_file = io.BytesIO(chunk)
-        audio_file.name = f"audio_chunk_{i+1}.m4a"  # ファイル名を設定
+        # 元のファイル拡張子を保持
+        file_extension = original_filename.split('.')[-1] if '.' in original_filename else 'm4a'
+        audio_file.name = f"audio_chunk_{i+1}.{file_extension}"
         
         try:
             # Whisper APIで文字起こし
@@ -151,7 +144,8 @@ def main():
         )
         
         st.info("💡 **対応形式**: m4a, mp3, wav, flac, mp4, mpeg, mpga, oga, ogg, webm")
-        st.info("📏 **ファイルサイズ**: 最大200MB")
+        st.info("📏 **ファイルサイズ**: 最大25MB（Whisper API制限）")
+        st.success("✨ **自動処理**: ファイル分割不要でそのまま処理可能")
     
     # チャット履歴の表示
     for message in st.session_state.messages:
@@ -171,8 +165,8 @@ def main():
         st.info(f"📁 **ファイル**: {uploaded_file.name} ({file_size_mb:.1f} MB)")
         
         # ファイルサイズチェック
-        if file_size_mb > 200:
-            st.error("ファイルサイズが200MBを超えています。より小さいファイルをアップロードしてください。")
+        if file_size_mb > 25:
+            st.error("ファイルサイズが25MBを超えています（Whisper API制限）。より小さいファイルをアップロードしてください。")
             return
         
         # 処理ボタン
@@ -189,19 +183,18 @@ def main():
                 # 音声ファイルの読み込み
                 audio_bytes = uploaded_file.getvalue()
                 
-                # チャンク分割
+                # ファイルサイズチェック
                 st.info("🔄 音声ファイルを処理中...")
-                chunks = split_audio_file(audio_bytes)
-                
-                if len(chunks) > 10:
-                    st.error("ファイルが大きすぎます。10チャンク以下になるよう調整してください。")
+                try:
+                    chunks = split_audio_file(audio_bytes)
+                    st.success(f"✅ 音声ファイルを処理しました（サイズ: {len(audio_bytes)/(1024*1024):.1f}MB）")
+                except ValueError as e:
+                    st.error(str(e))
                     return
-                
-                st.success(f"✅ {len(chunks)} 個のチャンクに分割しました")
                 
                 # 文字起こし実行
                 st.info("🎯 Whisper による文字起こしを実行中...")
-                transcript = transcribe_audio_chunks(chunks, openai_key)
+                transcript = transcribe_audio_chunks(chunks, openai_key, uploaded_file.name)
                 
                 if not transcript:
                     st.error("文字起こしに失敗しました")

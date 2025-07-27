@@ -30,7 +30,8 @@ def compress_audio(b: bytes, fname: str, target_mb=24) -> bytes:
         audio = AudioSegment.from_file(in_path)
         ratio = (target_mb*1024*1024*0.9) / len(b)
         br = "128k" if ratio>=.7 else "96k" if ratio>=.5 else "64k" if ratio>=.3 else "32k"
-        if br in ("64k","32k"): audio = audio.set_frame_rate(16000 if br=="32k" else 22050)
+        if br in ("64k","32k"):
+            audio = audio.set_frame_rate(16000 if br=="32k" else 22050)
         with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as t_out:
             out_path = t_out.name
         audio.export(out_path, format="mp3", bitrate=br, parameters=["-q:a","9"])
@@ -50,36 +51,55 @@ def transcribe(chunks, key, fname):
     st.success("✅ 文字起こし完了")
     return " ".join(texts)
 
+# ★★★ 変更点ここから ★★★
 def ask_dify(query: str, dify_key: str,
-             conv_id: str = "", user_id: str = "streamlit_user_1") -> tuple[Optional[str], Optional[str]]:
-
+             conv_id: str = "", user_id: str = "streamlit_user_1"
+            ) -> tuple[Optional[str], Optional[str]]:
+    """Dify へストリーミング送信し、要約を受け取る"""
     headers = {"Authorization": f"Bearer {dify_key}", "Content-Type": "application/json"}
-    payload = {"query": query, "inputs": {}, "response_mode": "streaming",
-               "conversation_id": conv_id, "user": user_id}
+    payload = {
+        "query": query,
+        "inputs": {},
+        "response_mode": "streaming",
+        "conversation_id": conv_id,
+        "user": user_id
+    }
 
-    with st.spinner("🌀 要約を生成中…"):
+    # ① 先に info を出す
+    st.info("📝 要約を開始します…")
+
+    # ② スピナーを開始し、以下の処理が終わるまで回し続ける
+    with st.spinner("要約を作成しています…"):
         r = requests.post("https://api.dify.ai/v1/chat-messages",
                           headers=headers, json=payload, timeout=120, stream=True)
 
-    if r.status_code == 200 and r.headers.get("Content-Type","").startswith("text/event-stream"):
-        chunks, new_id = [], conv_id
-        for line in r.iter_lines(decode_unicode=True):
-            if not line.startswith("data:"): continue
-            obj = json.loads(line[5:].strip())
-            if obj.get("event") == "message":
-                chunks.append(obj.get("answer","")); new_id = obj.get("conversation_id", conv_id)
-            elif obj.get("event") == "error":
-                st.error(f"Dify error: {obj.get('message') or obj}"); return None, conv_id
-            elif obj.get("event") == "message_end": break
-        return "".join(chunks), new_id
+        if r.status_code == 200 and r.headers.get("Content-Type","").startswith("text/event-stream"):
+            chunks, new_id = [], conv_id
+            for line in r.iter_lines(decode_unicode=True):
+                if not line.startswith("data:"):
+                    continue
+                obj = json.loads(line[5:].strip())
+                if obj.get("event") == "message":
+                    chunks.append(obj.get("answer",""))
+                    new_id = obj.get("conversation_id", conv_id)
+                elif obj.get("event") == "error":
+                    st.error(f"Dify error: {obj.get('message') or obj}")
+                    return None, conv_id
+                elif obj.get("event") == "message_end":
+                    break
+            return "".join(chunks), new_id
 
-    if r.status_code == 200:
-        js = r.json(); return js.get("answer",""), js.get("conversation_id","")
-    try:
-        st.error(f"Dify API {r.status_code}: {r.json()}")
-    except:
-        st.error(f"Dify API {r.status_code}: {r.text[:200]}")
-    return None, None
+        if r.status_code == 200:
+            js = r.json()
+            return js.get("answer",""), js.get("conversation_id","")
+
+        # エラー時もスピナー内で処理
+        try:
+            st.error(f"Dify API {r.status_code}: {r.json()}")
+        except Exception:
+            st.error(f"Dify API {r.status_code}: {r.text[:200]}")
+        return None, None
+# ★★★ 変更点ここまで ★★★
 
 # ─────────────────── 3. セッション初期化 ───────────────────
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -93,8 +113,6 @@ def main():
     # ─ sidebar ─────────────────────────────────────────
     with st.sidebar:
         st.header("🔰 はじめに")
-
-        # ★ NEW: ユーザー視点の 3 ステップ手順
         st.markdown(
             """
 ### 🚀 かんたん 3 ステップ
@@ -110,8 +128,6 @@ def main():
 """,
             unsafe_allow_html=True
         )
-
-        # ★ NEW: できることリスト
         st.markdown(
             """
 ### 💡 このアプリで出来ること
@@ -122,8 +138,6 @@ def main():
 """,
             unsafe_allow_html=True
         )
-
-        # 要約プロンプト入力（任意）
         prompt = st.text_area(
             "🖋️ 追加要約プロンプト（任意）",
             "",
@@ -166,7 +180,8 @@ def main():
             with st.chat_message("assistant"):
                 a, cid = ask_dify(qtxt, dify_key, st.session_state.conversation_id)
                 if a:
-                    st.markdown(a); st.session_state.messages.append({"role":"assistant","content":a})
+                    st.markdown(a)
+                    st.session_state.messages.append({"role":"assistant","content":a})
                     st.session_state.conversation_id = cid
                 else:
                     st.error("回答の生成に失敗しました")

@@ -552,27 +552,6 @@ div[data-testid="stAudioInput"] {
             st.audio(uf.getvalue())
 
     # ==============================
-    # 全クリアボタン（音声データがある場合のみ表示）
-    # ==============================
-    if st.session_state.get("recorded_audio_data") is not None or uf is not None:
-        st.markdown("---")
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            with st.container():
-                st.markdown('<div class="clear-button">', unsafe_allow_html=True)
-                if st.button(
-                    "🗑️ 全ての音声データをクリア",
-                    key="clear_all_btn",
-                    type="secondary",
-                    use_container_width=True
-                ):
-                    clear_all_audio()
-                    st.session_state.recorded_audio_data = None
-                    st.toast("🗑️ 全ての音声データをクリアしました", icon="✅")
-                    st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-
-    # ==============================
     # 音声処理セクション
     # ==============================
     b = None

@@ -2,7 +2,6 @@
 # import openai, json, requests, io, os, tempfile
 # from typing import Optional, Tuple
 # from pydub import AudioSegment
-# import sounddevice as sd
 # import numpy as np
 # import wave
 # from datetime import datetime
@@ -29,14 +28,6 @@
 #     st.session_state.uploader_key = 0
 # if "recorder_key" not in st.session_state:
 #     st.session_state.recorder_key = 0
-
-# # 録音開始
-
-# def start_recording(duration=60, fs=44100):
-#     st.info("🎙️ 録音中…")
-#     audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='int16')
-#     sd.wait()
-#     return audio
 
 
 # def save_audio_to_wav(audio_data, fs=44100):
@@ -406,8 +397,40 @@
 #     width: 100% !important;
 #     max-width: 100% !important;
 # }
-# </style>
 
+# /* --- 録音ボタンのスタイル統一 --- */
+# /* audiorecorderコンポーネントのボタン */
+# div[data-testid="stAudioRecorder"] button {
+#     background: #007bff !important;
+#     color: white !important;
+#     border: none !important;
+#     border-radius: 8px !important;
+#     font-weight: 600 !important;
+#     padding: 12px 24px !important;
+#     font-size: 14px !important;
+#     transition: background-color 0.2s ease !important;
+#     width: 100% !important;
+#     height: auto !important;
+#     min-height: 44px !important;
+# }
+
+# div[data-testid="stAudioRecorder"] button:hover {
+#     background: #0056b3 !important;
+# }
+
+# /* 録音中（停止ボタン）の場合は赤色に */
+# div[data-testid="stAudioRecorder"] button[title*="停止"], 
+# div[data-testid="stAudioRecorder"] button:contains("⏹"),
+# div[data-testid="stAudioRecorder"] button[aria-label*="stop"] {
+#     background: #dc3545 !important;
+# }
+
+# div[data-testid="stAudioRecorder"] button[title*="停止"]:hover, 
+# div[data-testid="stAudioRecorder"] button:contains("⏹"):hover,
+# div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
+#     background: #c82333 !important;
+# }
+# </style>
 # """, unsafe_allow_html=True)
 
     
@@ -441,6 +464,9 @@
 #             </p>
 #         </div>
 #         """, unsafe_allow_html=True)
+        
+#         # 録音コントロール
+#         col1, col2 = st.columns([3, 1])
         
 #         # 録音コントロール
 #         col1, col2 = st.columns([3, 1])
@@ -674,22 +700,25 @@
 #                     key="summary_edit",
 #                 )
 #                 c1, c2 = st.columns([0.5, 0.5])
-#                 c1.button(
+                
+#                 # 保存ボタン
+#                 if c1.button(
 #                     "💾 保存",
 #                     key="save_summary_btn",
 #                     use_container_width=True,
-#                     on_click=lambda: (
-#                         st.session_state.__setitem__("summary_text", new_s),
-#                         set_flag("editing_summary", False)
-#                     ),
-#                 )
-#                 c2.button(
+#                 ):
+#                     st.session_state.summary_text = st.session_state.summary_edit
+#                     st.session_state.editing_summary = False
+#                     st.rerun()
+                
+#                 # キャンセルボタン
+#                 if c2.button(
 #                     "↩️ キャンセル",
 #                     key="cancel_summary_btn",
 #                     use_container_width=True,
-#                     on_click=set_flag,
-#                     args=("editing_summary", False),
-#                 )
+#                 ):
+#                     st.session_state.editing_summary = False
+#                     st.rerun()
 #             else:
 #                 height = calculate_textarea_height(st.session_state.summary_text, min_height=100, line_height=20, max_height=3500)
 #                 st.text_area(
@@ -726,33 +755,36 @@
 #                     "（編集中）文字起こし",
 #                     value=st.session_state.transcript_text,
 #                     height=height,
-#                     key="transcript_edit",   # ← 編集用キー（固定）
+#                     key="transcript_edit",
 #                 )
 #                 c1, c2 = st.columns([0.5, 0.5])
-#                 c1.button(
+                
+#                 # 保存ボタン
+#                 if c1.button(
 #                     "💾 保存",
 #                     key="save_transcript_btn",
 #                     use_container_width=True,
-#                     on_click=lambda: (
-#                         st.session_state.__setitem__("transcript_text", new_t),
-#                         set_flag("editing_transcript", False)
-#                     ),
-#                 )
-#                 c2.button(
+#                 ):
+#                     st.session_state.transcript_text = st.session_state.transcript_edit
+#                     st.session_state.editing_transcript = False
+#                     st.rerun()
+                
+#                 # キャンセルボタン
+#                 if c2.button(
 #                     "↩️ キャンセル",
 #                     key="cancel_transcript_btn",
 #                     use_container_width=True,
-#                     on_click=set_flag,
-#                     args=("editing_transcript", False),
-#                 )
+#                 ):
+#                     st.session_state.editing_transcript = False
+#                     st.rerun()
 #             else:
 #                 height = calculate_textarea_height(st.session_state.transcript_text)
 #                 st.text_area(
 #                     "文字起こし（閲覧モード）",
 #                     value=st.session_state.transcript_text,
 #                     height=height,
-#                     key="transcript_view",   # ← 閲覧用キー（編集用と別にする）
-#                     disabled=True,           # ← CSSでグレー解除は前回のスタイルを適用
+#                     key="transcript_view",
+#                     disabled=True,
 #                 )
 #                 c1, c2 = st.columns([0.5, 0.5])
 #                 c1.button(

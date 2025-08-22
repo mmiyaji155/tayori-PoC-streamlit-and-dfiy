@@ -5,7 +5,6 @@ from pydub import AudioSegment
 import numpy as np
 import wave
 from datetime import datetime
-from audiorecorder import audiorecorder
 from uuid import uuid4
 
 # 画面設定
@@ -26,8 +25,8 @@ if "editing_enabled" not in st.session_state:
     st.session_state.editing_enabled = False
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
-if "recorder_key" not in st.session_state:
-    st.session_state.recorder_key = 0
+if "audio_input_key" not in st.session_state:
+    st.session_state.audio_input_key = 0
 
 
 def save_audio_to_wav(audio_data, fs=44100):
@@ -191,10 +190,9 @@ def calculate_textarea_height(text, min_height=100, line_height=20, max_height=3
     return min(calculated_height, max_height)
 
 
-def clear_recorded_audio():
+def clear_audio_input():
     """録音データをクリア"""
-    st.session_state.recorded_wav = None
-    st.session_state.recorder_key += 1  # 録音コンポーネントもリセット
+    st.session_state.audio_input_key += 1
 
 
 def clear_uploaded_file():
@@ -204,9 +202,15 @@ def clear_uploaded_file():
 
 def clear_all_audio():
     """全ての音声データをクリア"""
-    st.session_state.recorded_wav = None
     st.session_state.uploader_key += 1
-    st.session_state.recorder_key += 1  # 録音コンポーネントもリセット
+    st.session_state.audio_input_key += 1
+
+
+def is_mobile_device():
+    """モバイルデバイスかどうかを判定（簡易版）"""
+    # この関数は実際のUser-Agentを取得できないため、常にFalseを返します
+    # 実際の環境では、JavaScriptやその他の方法でUser-Agentを取得する必要があります
+    return False
 
 
 def main():
@@ -398,37 +402,38 @@ div[data-testid="stVerticalBlock"] > div[style*="width"] {
     max-width: 100% !important;
 }
 
-/* --- 録音ボタンのスタイル統一 --- */
-/* audiorecorderコンポーネントのボタン */
-div[data-testid="stAudioRecorder"] button {
-    background: #007bff !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 8px !important;
-    font-weight: 600 !important;
-    padding: 12px 24px !important;
-    font-size: 14px !important;
-    transition: background-color 0.2s ease !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 44px !important;
+/* --- audio_input のスタイル調整 --- */
+div[data-testid="stAudioInput"] {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
 }
 
-div[data-testid="stAudioRecorder"] button:hover {
-    background: #0056b3 !important;
+/* モバイル用の追加スタイル */
+@media (max-width: 768px) {
+    .audio-card, .upload-card {
+        padding: 16px;
+        margin: 8px 0;
+    }
+    
+    .stButton > button {
+        padding: 16px 20px !important;
+        font-size: 16px !important;
+        min-height: 48px !important;
+    }
+    
+    div[data-testid="stAudioInput"] {
+        padding: 20px 16px;
+    }
 }
 
-/* 録音中（停止ボタン）の場合は赤色に */
-div[data-testid="stAudioRecorder"] button[title*="停止"], 
-div[data-testid="stAudioRecorder"] button:contains("⏹"),
-div[data-testid="stAudioRecorder"] button[aria-label*="stop"] {
-    background: #dc3545 !important;
-}
-
-div[data-testid="stAudioRecorder"] button[title*="停止"]:hover, 
-div[data-testid="stAudioRecorder"] button:contains("⏹"):hover,
-div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
-    background: #c82333 !important;
+/* iPhone Safari 用の追加調整 */
+@supports (-webkit-touch-callout: none) {
+    .stButton > button {
+        -webkit-appearance: button;
+        min-height: 44px !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -439,7 +444,7 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
         return
 
     # ---- セッション初期化 ----
-    st.session_state.setdefault("recorded_wav", None)       # コンポーネントから受け取ったWAVバイト
+    st.session_state.setdefault("recorded_audio_data", None)
     st.session_state.setdefault("transcript_text", "")
     st.session_state.setdefault("summary_text", "")
     st.session_state.setdefault("editing_enabled", False)
@@ -450,7 +455,7 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
     tab1, tab2 = st.tabs(["🎙️ 録音", "📁 ファイルアップロード"])
     
     # ==============================
-    # 録音タブ
+    # 録音タブ - st.audio_input() を使用
     # ==============================
     with tab1:
         st.markdown("""
@@ -460,7 +465,7 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
                 <span>マイクから録音</span>
             </div>
             <p style="margin-bottom: 20px; color: #6c757d;">
-                下のボタンで録音を開始/停止できます。初回はマイクのアクセス許可が必要です。
+                下のボタンで録音できます。📱スマホでも利用可能です。
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -468,43 +473,36 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
         # 録音コントロール
         col1, col2 = st.columns([3, 1])
         
-        # 録音コントロール
-        col1, col2 = st.columns([3, 1])
-        
         with col1:
-            audio = audiorecorder(
-                "🎙️ 録音開始", 
-                "⏹ 録音停止",
-                key=f"audio_recorder_{st.session_state.recorder_key}"
+            # Streamlit標準のaudio_inputを使用（モバイル対応）
+            audio_bytes = st.audio_input(
+                "録音ボタンを押して音声を録音",
+                key=f"audio_input_{st.session_state.audio_input_key}"
             )
-
-        # 停止後、音声が返ってきたら WAV に変換して保存
-        if len(audio) > 0:
-            from io import BytesIO
-            buf = BytesIO()
-            audio.export(buf, format="wav")
-            st.session_state.recorded_wav = buf.getvalue()
-            st.toast("🎤 録音が完了しました！", icon="✅")
-        
+            
+            if audio_bytes:
+                st.session_state.recorded_audio_data = audio_bytes
+                
         with col2:
             # 録音データがある場合のみクリアボタンを表示
-            if st.session_state.get("recorded_wav") is not None:
+            if st.session_state.get("recorded_audio_data") is not None:
                 with st.container():
                     st.markdown('<div class="clear-button">', unsafe_allow_html=True)
                     if st.button("🗑️ クリア", key="clear_recorded_btn", use_container_width=True):
-                        clear_recorded_audio()
+                        clear_audio_input()
+                        st.session_state.recorded_audio_data = None
                         st.toast("🗑️ 録音データをクリアしました", icon="✅")
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
 
         # 録音データの状態表示
-        if st.session_state.get("recorded_wav") is not None:
+        if st.session_state.get("recorded_audio_data") is not None:
             st.markdown("""
             <div class="status-badge status-success">
                 ✅ 録音データ準備完了
             </div>
             """, unsafe_allow_html=True)
-            st.audio(st.session_state.recorded_wav, format="audio/wav")
+            st.audio(st.session_state.recorded_audio_data, format="audio/wav")
 
     # ==============================
     # ファイルアップロードタブ
@@ -556,7 +554,7 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
     # ==============================
     # 全クリアボタン（音声データがある場合のみ表示）
     # ==============================
-    if st.session_state.get("recorded_wav") is not None or uf is not None:
+    if st.session_state.get("recorded_audio_data") is not None or uf is not None:
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -569,6 +567,7 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
                     use_container_width=True
                 ):
                     clear_all_audio()
+                    st.session_state.recorded_audio_data = None
                     st.toast("🗑️ 全ての音声データをクリアしました", icon="✅")
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -580,8 +579,8 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
     fname = None
 
     # 使用する音声の判定と表示
-    if st.session_state.get("recorded_wav") is not None:
-        b = st.session_state.recorded_wav
+    if st.session_state.get("recorded_audio_data") is not None:
+        b = st.session_state.recorded_audio_data
         fname = "mic_recorded.wav"
         
     elif uf:
@@ -590,6 +589,12 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
 
     # 処理ボタンの表示
     if b and fname:
+        # ✅ 最初にbytesに変換（UploadedFile対応）
+        if hasattr(b, 'getvalue'):
+            audio_bytes = b.getvalue()  # UploadedFile → bytes
+        else:
+            audio_bytes = b  # 既にbytesの場合
+        
         st.markdown("---")
         st.markdown("### 🚀 音声処理")
         
@@ -597,7 +602,7 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            if st.session_state.get("recorded_wav") is not None:
+            if st.session_state.get("recorded_audio_data") is not None:
                 st.markdown("""
                 <div class="process-box process-ready">
                     <h4 style="margin: 0; color: #155724;">🎙️ 録音データを処理します</h4>
@@ -613,8 +618,8 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
                 """, unsafe_allow_html=True)
         
         with col2:
-            # ファイルサイズ表示
-            size_mb = len(b) / (1024 * 1024)
+            # ✅ 変換済みbytesを使用
+            size_mb = len(audio_bytes) / (1024 * 1024)
             st.metric("ファイルサイズ", f"{size_mb:.1f} MB")
             
             if size_mb > 25:
@@ -633,17 +638,14 @@ div[data-testid="stAudioRecorder"] button[aria-label*="stop"]:hover {
             )
         
         if process_button:
-            if len(b) > 25 * 1024 * 1024:
+            # ✅ 変換済みbytesを使用
+            if len(audio_bytes) > 25 * 1024 * 1024:
                 st.info("25MB超を検知 → 音声を圧縮")
-                b = compress_audio(b, fname)
+                audio_bytes = compress_audio(audio_bytes, fname)
 
-            transcript = transcribe([b], openai_key, fname)
+            transcript = transcribe([audio_bytes], openai_key, fname)
 
-            prompt = (
-                # "以下の文字起こしを要約してください。"
-                # "JSON形式で transcript と summary に分けてください。\n\n"
-                f"{transcript}"
-            )
+            prompt = f"{transcript}"
 
             # ▼ ask_dify は (answer_str_or_dict, conversation_id) を返す
             answer, new_conv_id = ask_dify(

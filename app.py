@@ -2,7 +2,6 @@ import streamlit as st
 import openai, json, requests, io, os, tempfile
 from typing import Optional, Tuple
 from pydub import AudioSegment
-import sounddevice as sd
 import numpy as np
 import wave
 from datetime import datetime
@@ -29,14 +28,6 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 if "recorder_key" not in st.session_state:
     st.session_state.recorder_key = 0
-
-# 録音開始
-
-def start_recording(duration=60, fs=44100):
-    st.info("🎙️ 録音中…")
-    audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='int16')
-    sd.wait()
-    return audio
 
 
 def save_audio_to_wav(audio_data, fs=44100):

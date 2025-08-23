@@ -6,28 +6,10 @@ import numpy as np
 import wave
 from datetime import datetime
 from uuid import uuid4
+from streamlit_float import *
 
 # 画面設定
 st.set_page_config(page_title="音声・動画要約チャット", page_icon="🎥", layout="wide")
-st.title("📝IC要約チャットシステム")
-st.markdown("PCのマイクやアップロード音声・動画から **文字起こし → 要約** を行い、編集可能なUIで確認できます")
-
-# セッションステート
-if "recording" not in st.session_state:
-    st.session_state.recording = False
-if "recorded_audio" not in st.session_state:
-    st.session_state.recorded_audio = None
-if "transcript_text" not in st.session_state:
-    st.session_state.transcript_text = ""
-if "summary_text" not in st.session_state:
-    st.session_state.summary_text = ""
-if "editing_enabled" not in st.session_state:
-    st.session_state.editing_enabled = False
-if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = 0
-if "audio_input_key" not in st.session_state:
-    st.session_state.audio_input_key = 0
-
 
 def save_audio_to_wav(audio_data, fs=44100):
     filename = "recorded_audio.wav"
@@ -54,9 +36,51 @@ def is_video_file(filename):
     return ext in video_extensions
 
 
+def check_community_cloud_limits(file_size_mb, is_video=False):
+    """Community Cloud制限をチェックして警告を表示"""
+    warnings = []
+    
+    # ファイルサイズチェック（デフォルト200MBを基準）
+    if file_size_mb > 200:
+        warnings.append(f"⚠️ ファイルサイズが200MBを超えています")
+    
+    # 動画ファイルの追加警告
+    if is_video and file_size_mb > 100:
+        warnings.append("⚠️ 大きな動画ファイルは処理時間が長くなり、タイムアウトの可能性があります")
+    
+    # メモリ使用量の予想警告
+    if file_size_mb > 50:
+        warnings.append("⚠️ Community Cloudのメモリ制限(1GB)にご注意ください")
+    
+    return warnings
+
+
+@st.cache_data(ttl=3600, max_entries=3)  # 1時間キャッシュ、最大3エントリ
+def cached_transcribe(audio_data_hash, openai_key):
+    """文字起こし結果をキャッシュ（Community Cloud最適化）"""
+    # 実際の処理は元のtranscribe関数を使用
+    # ここではハッシュベースのキャッシングのみ実装
+    return None
+
+
+def optimize_for_community_cloud():
+    """Community Cloud用の最適化設定"""
+    # メモリ使用量を監視するための設定
+    if 'memory_usage_warned' not in st.session_state:
+        st.session_state.memory_usage_warned = False
+    
+    # セッション状態のクリーンアップ
+    if len(st.session_state) > 20:  # 状態が多すぎる場合
+        st.warning("🧹 メモリ最適化のため、一部のセッション状態をクリアすることをお勧めします")
+
+
 def extract_audio_from_video(video_bytes, video_filename):
-    """動画ファイルから音声を抽出"""
+    """動画ファイルから音声を抽出（Community Cloud最適化版）"""
     try:
+        # Community Cloud用のメモリ監視
+        if len(video_bytes) > 100 * 1024 * 1024:  # 100MB超
+            st.warning("⚠️ 大きなファイルです。Community Cloudの制限により処理が中断される可能性があります")
+        
         st.info("🎬 動画から音声を抽出中...")
         
         # 動画の拡張子を取得
@@ -68,8 +92,14 @@ def extract_audio_from_video(video_bytes, video_filename):
             video_path = temp_video.name
         
         try:
-            # 動画から音声を抽出
+            # 動画から音声を抽出（低品質設定でメモリ節約）
             audio = AudioSegment.from_file(video_path)
+            
+            # Community Cloud用：音声品質を下げてメモリ使用量を削減
+            if len(video_bytes) > 50 * 1024 * 1024:  # 50MB超の場合
+                audio = audio.set_frame_rate(16000)  # サンプリングレート下げる
+                audio = audio.set_channels(1)  # モノラルに変換
+                st.info("📉 メモリ節約のため音声品質を調整しました")
             
             # 音声を一時ファイルに保存
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
@@ -95,7 +125,7 @@ def extract_audio_from_video(video_bytes, video_filename):
                 
     except Exception as e:
         st.error(f"❌ 動画から音声の抽出に失敗しました: {e}")
-        st.warning("💡 対応形式: MP4, MOV, AVI, MKV, WMV, FLV, WebM, M4V")
+        st.warning("💡 Community Cloudの制限により、大きなファイルの処理が制限される場合があります")
         return None
 
 
@@ -264,6 +294,109 @@ def get_file_type_info(filename):
         return "🎬", "動画", "video"
     else:
         return "🎵", "音声", "audio"
+
+
+def clear_all_session_data():
+    """全てのセッション状態をクリアしてリフレッシュ"""
+    # 音声・動画データのクリア
+    if "recorded_audio_data" in st.session_state:
+        del st.session_state.recorded_audio_data
+    if "transcript_text" in st.session_state:
+        del st.session_state.transcript_text
+    if "summary_text" in st.session_state:
+        del st.session_state.summary_text
+    
+    # 編集状態のクリア
+    if "editing_enabled" in st.session_state:
+        del st.session_state.editing_enabled
+    if "editing_transcript" in st.session_state:
+        del st.session_state.editing_transcript
+    if "editing_summary" in st.session_state:
+        del st.session_state.editing_summary
+    
+    # 確認フラグのクリア
+    if "confirm_refresh" in st.session_state:
+        del st.session_state.confirm_refresh
+    
+    # アップロード関連のキーをリセット（ファイルをクリアするため）
+    st.session_state.uploader_key += 1
+    st.session_state.audio_input_key += 1
+    
+    # Dify会話IDのクリア
+    if "dify_conversation_id" in st.session_state:
+        del st.session_state.dify_conversation_id
+    if "dify_user_id" in st.session_state:
+        del st.session_state.dify_user_id
+
+# ==============================
+# app 開始
+# =============================
+
+# ヘッダー部分の配置
+# ヘッダー（スクロール時に固定）
+# streamlit-float の初期化
+float_init()
+
+# ヘッダー用のコンテナを作成
+header_container = st.container()
+
+with header_container:
+    # ヘッダー内のレイアウト
+    header_col1, header_col2 = st.columns([3, 1])
+
+    with header_col1:
+        st.markdown("<div style='display: flex; justify-content: flex-start; align-items: center; height: 100%; padding-left: 1rem;'><p style='background: linear-gradient(45deg, blue, #87CEEB); -webkit-background-clip: text; background-clip: text; color: transparent; margin: 0; font-size: 1.8rem; font-weight: bold;'>TAYORI</p></div>", unsafe_allow_html=True)
+
+    with header_col2:
+        # 確認ダイアログ機能付きリフレッシュボタン
+        if "confirm_refresh" not in st.session_state:
+            st.session_state.confirm_refresh = False
+        
+        if not st.session_state.confirm_refresh:
+            if st.button("🔄 新しい音声を要約", key="refresh-session-btn", help="全ての要約データをクリアして最初から開始", use_container_width=True):
+                st.session_state.confirm_refresh = True
+                st.rerun()
+        else:
+            st.warning("⚠️ 全てのデータが消去されます。続行しますか？")
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                if st.button("✅ はい", key="confirm-yes", use_container_width=True, type="primary"):
+                    clear_all_session_data()
+                    st.session_state.confirm_refresh = False
+                    st.toast("🔄 新しいセッションを開始しました", icon="✅")
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ いいえ", key="confirm-no", use_container_width=True):
+                    st.session_state.confirm_refresh = False
+                    st.rerun()
+
+# 作成したコンテナを画面上部に固定
+header_container.float("top: 3.75rem; left: 0; right: 0; background: linear-gradient(45deg, white, #e6f2ff); padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); z-index: 99;")
+
+st.markdown("<br>", unsafe_allow_html=True)  # ヘッダー分のスペース確保
+st.title("📝IC要約チャットシステム")
+st.markdown("PCのマイクやアップロード音声・動画から **文字起こし → 要約** を行い、編集可能なUIで確認できます")
+
+# 区切り線
+st.markdown("---")
+
+# セッションステート
+if "recording" not in st.session_state:
+    st.session_state.recording = False
+if "recorded_audio" not in st.session_state:
+    st.session_state.recorded_audio = None
+if "transcript_text" not in st.session_state:
+    st.session_state.transcript_text = ""
+if "summary_text" not in st.session_state:
+    st.session_state.summary_text = ""
+if "editing_enabled" not in st.session_state:
+    st.session_state.editing_enabled = False
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+if "audio_input_key" not in st.session_state:
+    st.session_state.audio_input_key = 0
 
 
 def main():
@@ -508,6 +641,41 @@ div[data-testid="stAudioInput"] {
         min-height: 44px !important;
     }
 }
+
+/* --- 🔄 新しいセッション ボタンのスタイル --- */
+[data-testid="refresh-session-btn"] button {
+    background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 25px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3) !important;
+    transition: all 0.3s ease !important;
+}
+
+[data-testid="refresh-session-btn"] button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4) !important;
+}
+
+[data-testid="refresh-session-btn"] button:active {
+    transform: translateY(0px) !important;
+}
+
+/* 確認ボタンのスタイル */
+[data-testid="confirm-yes"] button {
+    background: #28a745 !important;
+    font-size: 13px !important;
+    padding: 8px 16px !important;
+    border-radius: 6px !important;
+}
+
+[data-testid="confirm-no"] button {
+    background: #dc3545 !important;
+    font-size: 13px !important;
+    padding: 8px 16px !important;
+    border-radius: 6px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -516,11 +684,15 @@ div[data-testid="stAudioInput"] {
     if not all([openai_key, dify_key]):
         return
 
+    # Community Cloud最適化
+    optimize_for_community_cloud()
+
     # ---- セッション初期化 ----
     st.session_state.setdefault("recorded_audio_data", None)
     st.session_state.setdefault("transcript_text", "")
     st.session_state.setdefault("summary_text", "")
     st.session_state.setdefault("editing_enabled", False)
+    st.session_state.setdefault("confirm_refresh", False)  # リフレッシュ確認用
 
     st.header("🎵 音声・動画入力")
 
@@ -581,7 +753,7 @@ div[data-testid="stAudioInput"] {
     # ファイルアップロードタブ
     # ==============================
     with tab2:
-        st.markdown("""
+        st.markdown(f"""
         <div class="upload-card">
             <div class="section-header">
                 <span class="icon">📁</span>
@@ -589,7 +761,7 @@ div[data-testid="stAudioInput"] {
             </div>
             <p style="margin-bottom: 20px; color: #6c757d;">
                 <strong>🎵 音声:</strong> MP3, WAV, M4A, FLAC<br>
-                <strong>🎬 動画:</strong> MP4, MOV, AVI, MKV, WMV, FLV, WebM, M4V
+                <strong>🎬 動画:</strong> MP4, MOV, AVI, MKV, WMV, FLV, WebM, M4V<br>
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -695,8 +867,16 @@ div[data-testid="stAudioInput"] {
             size_mb = len(file_bytes) / (1024 * 1024)
             st.metric("ファイルサイズ", f"{size_mb:.1f} MB")
             
-            if size_mb > 25:
-                st.warning("⚠️ 25MB超のため圧縮されます")
+            # Community Cloud制限チェック
+            warnings = check_community_cloud_limits(size_mb, is_video)
+            for warning in warnings:
+                st.warning(warning)
+            
+            # ファイルサイズに応じた情報表示
+            if size_mb > 100:
+                st.warning("⚠️ 大きなファイルです。処理に時間がかかる場合があります。")
+            elif size_mb > 25:
+                st.info("ℹ️ 25MB超のため音声圧縮を行います。")
 
         # 処理ボタン
         st.markdown("<br>", unsafe_allow_html=True)

@@ -164,7 +164,8 @@ def transcribe(chunks, key, fname):
 def ask_dify(query: str,
              dify_key: str,
              conv_id: str = "",
-             user_id: Optional[str] = None
+             user_id: Optional[str] = None,
+             template_name: str = "カンファレンス"
             ) -> Tuple[Optional[str|dict], Optional[str]]:
     """
     Dify へストリーミング送信し、要約を受け取る
@@ -186,7 +187,7 @@ def ask_dify(query: str,
 
     payload = {
         "query": query,
-        "inputs": {},
+        "inputs": {"template_name": template_name} if template_name else {},
         "response_mode": "streaming",
         "user": user_id,   # ★必須
     }
@@ -268,7 +269,7 @@ def calculate_textarea_height(text, min_height=100, line_height=20, max_height=3
         return min_height
     
     lines = text.count('\n') + 1
-    calculated_height = max(min_height, lines * line_height + 40)  # +40はpadding等
+    calculated_height = max(min_height, lines * line_height + 100)  # +100はpadding等
     return min(calculated_height, max_height)
 
 
@@ -376,7 +377,7 @@ with header_container:
 header_container.float("top: 3.75rem; left: 0; right: 0; background: linear-gradient(45deg, white, #e6f2ff); padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); z-index: 99;")
 
 st.markdown("<br>", unsafe_allow_html=True)  # ヘッダー分のスペース確保
-st.title("📝IC要約チャットシステム")
+st.title("📝カルテ記録内容作成システム")
 st.markdown("PCのマイクやアップロード音声・動画から **文字起こし → 要約** を行い、編集可能なUIで確認できます")
 
 # 区切り線
@@ -395,6 +396,8 @@ if "editing_enabled" not in st.session_state:
     st.session_state.editing_enabled = False
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
+if "selected_template" not in st.session_state:
+    st.session_state.selected_template = "標準テンプレート"
 if "audio_input_key" not in st.session_state:
     st.session_state.audio_input_key = 0
 
@@ -694,7 +697,32 @@ div[data-testid="stAudioInput"] {
     st.session_state.setdefault("editing_enabled", False)
     st.session_state.setdefault("confirm_refresh", False)  # リフレッシュ確認用
 
-    st.header("🎵 音声・動画入力")
+    st.header("音声・動画入力")
+    
+    # ==============================
+    # テンプレート選択（全タブ共通）
+    # ==============================
+    st.markdown("#### 📝 記録内容の選択")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        # テンプレート選択プルダウン
+        template_options = [
+            "IC (インフォームドコンセント)",
+            "診療記録",
+            "看護記録",
+            "カンファレンス",
+        ]
+        st.session_state.selected_template = st.selectbox(
+            "対象の記録内容を選択してください",
+            options=template_options,
+            index=template_options.index(st.session_state.selected_template) if st.session_state.selected_template in template_options else 0,
+            key="template_selector",
+            help="文字起こしと要約の対象となる記録内容を選択してください"
+        )
+    
+    st.markdown("---")
 
     # タブでの選択
     tab1, tab2 = st.tabs(["🎙️ 録音", "📁 ファイルアップロード"])
@@ -916,7 +944,8 @@ div[data-testid="stAudioInput"] {
                 prompt,
                 dify_key,
                 conv_id=st.session_state.get("dify_conversation_id", ""),
-                user_id=st.session_state.get("dify_user_id")
+                user_id=st.session_state.get("dify_user_id"),
+                template_name=st.session_state.get("selected_template", "カンファレンス")
             )
 
             # 会話IDを更新（継続利用する場合に備える）

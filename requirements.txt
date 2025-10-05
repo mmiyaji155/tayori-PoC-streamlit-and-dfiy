@@ -2,3 +2,7 @@ streamlit>=1.36.0
 openai>=1.35.0
 requests>=2.31.0
 pydub>=0.25.1
+sounddevice>=0.4.6
+numpy>=1.24.0
+streamlit-audiorecorder==0.0.6
+streamlit-float
